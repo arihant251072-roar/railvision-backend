@@ -286,15 +286,16 @@ class EmergencyResponseEngine:
             db, segment, settings.EMERGENCY_RADIUS_KM
         )
 
+        # Approximate 20km in degrees (~0.18 degrees) to avoid raw PostGIS typecast syntax error
+        lat_delta = 0.18
+        lon_delta = 0.18
+
         start_junctions_result = await db.execute(
             select(Junction).where(
                 and_(
                     Junction.is_active == True,
-                    func.ST_DWithin(
-                        func.ST_MakePoint(Junction.longitude, Junction.latitude)::geography,
-                        func.ST_MakePoint(segment.longitude_start, segment.latitude_start)::geography,
-                        20000
-                    )
+                    Junction.latitude.between(segment.latitude_start - lat_delta, segment.latitude_start + lat_delta),
+                    Junction.longitude.between(segment.longitude_start - lon_delta, segment.longitude_start + lon_delta)
                 )
             ).limit(5)
         )
@@ -304,11 +305,8 @@ class EmergencyResponseEngine:
             select(Junction).where(
                 and_(
                     Junction.is_active == True,
-                    func.ST_DWithin(
-                        func.ST_MakePoint(Junction.longitude, Junction.latitude)::geography,
-                        func.ST_MakePoint(segment.longitude_end, segment.latitude_end)::geography,
-                        20000
-                    )
+                    Junction.latitude.between(segment.latitude_end - lat_delta, segment.latitude_end + lat_delta),
+                    Junction.longitude.between(segment.longitude_end - lon_delta, segment.longitude_end + lon_delta)
                 )
             ).limit(5)
         )
@@ -318,7 +316,7 @@ class EmergencyResponseEngine:
         for start_j in start_junctions:
             for end_j in end_junctions:
                 if start_j.id != end_j.id:
-                    routes = self.find_alternate_routes(
+                    routes = await self.find_alternate_routes(
                         db, segment, start_j.id, end_j.id, max_routes=2
                     )
                     all_routes.extend(routes)
